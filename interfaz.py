@@ -41,7 +41,7 @@ casos_data = {
     }
 }
 # BARRA LATERAL DE CONTROLES
-st.sidebar.title("CPANEL DE CONTROL")
+st.sidebar.title("PANEL DE CONTROL")
 caso = st.sidebar.selectbox(
     "Selecciona un caso de estudio", 
 list(casos_data.keys())
