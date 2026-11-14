@@ -12,9 +12,11 @@ from PIL import Image
 from rasterio.transform import array_bounds
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 from streamlit_folium import st_folium
+from dotenv import load_dotenv
 
-from ia_informe import generar_informe_stream, informe_local
+from qwen import generar_informe, informe_local
 
+load_dotenv()  # Carga variables de entorno desde .env
 DATA_DIR = Path("data")
 
 st.set_page_config(page_title="FloodyLens", page_icon="🌊", layout="wide")
@@ -382,8 +384,14 @@ stats_ia = {
 clave_informe = f"informe::{caso}"
 if st.button("Actualizar Informe de IA"):
     try:
+        datos_para_ia = {
+            "caso": nombre,
+            "descripcion": descripcion,
+            **datos,
+            **stats_ia,
+        }
         with st.container():
-            texto = st.write_stream(generar_informe_stream(nombre, descripcion, stats_ia))
+            texto = st.write_stream(generar_informe(datos_para_ia, stream=True))
         st.session_state[clave_informe] = texto
         st.success("Informe actualizado con éxito.")
     except Exception as e:
@@ -396,4 +404,7 @@ else:
         or datos.get("informe_ia")
         or informe_local(nombre, stats_ia)
     )
-    st.markdown(f"> {texto}")
+    if "\n" in texto:
+        st.markdown(texto)
+    else:
+        st.markdown(f"> {texto}")
