@@ -1,16 +1,12 @@
-# --- Interfaz ---
 streamlit
 folium
 streamlit-folium
-
-# --- Datos geoespaciales ---
 rasterio
 numpy
 pillow
-
-# --- Procesamiento (procesamiento.py) ---
-opencv-python-headless
-
-# --- IA (ia_informe.py) ---
+scipy
+matplotlib
 openai
 python-dotenv
+requests
+pycountry

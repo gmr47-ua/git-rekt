@@ -7,7 +7,6 @@ import folium
 import numpy as np
 import rasterio
 import streamlit as st
-import streamlit.components.v1 as components
 from PIL import Image
 from rasterio.transform import array_bounds
 from rasterio.warp import Resampling, calculate_default_transform, reproject
@@ -97,7 +96,7 @@ def preparar_overlay(ruta: str, mtime: float):
         oeste, sur, este, norte = array_bounds(alto, ancho, transform)
 
     rgba = np.zeros((alto, ancho, 4), dtype=np.uint8)
-    rgba[destino > 0] = [0, 110, 255, 255]
+    rgba[destino == 1] = [0, 110, 255, 255]
     buf = io.BytesIO()
     Image.fromarray(rgba, mode="RGBA").save(buf, format="PNG", optimize=True)
     return base64.b64encode(buf.getvalue()).decode("ascii"), [[sur, oeste], [norte, este]]
@@ -167,7 +166,11 @@ def mostrar_slider(ruta_a: Path, ruta_d: Path, alto=520):
         .replace("__ANTES__", a64)
         .replace("__DESPUES__", d64)
     )
-    components.html(html, height=alto + 10)
+    if hasattr(st, "iframe"):          # Streamlit reciente
+        st.iframe(html, height=alto + 10)
+    else:                              # versiones antiguas
+        import streamlit.components.v1 as components
+        components.html(html, height=alto + 10)
 
 
 @st.cache_data(show_spinner=False)
@@ -175,7 +178,7 @@ def imagen_con_agua_png(ruta_d: str, ruta_m: str, opacidad: float, mtime_d: floa
     """Imagen 'despues' con la mascara de agua en azul encima -> bytes PNG."""
     base = Image.open(ruta_d).convert("RGBA")
     with rasterio.open(ruta_m) as src:
-        agua = src.read(1) > 0
+        agua = src.read(1) == 1
     mascara = Image.fromarray((agua * 255).astype(np.uint8)).resize(base.size, Image.NEAREST)
     hay_agua = np.array(mascara) > 0
     capa = np.zeros((base.size[1], base.size[0], 4), dtype=np.uint8)
@@ -260,8 +263,20 @@ sensor = primero(datos, ["sensor"], "N/D")
 st.title("🌊 FloodyLens")
 st.subheader(f"Análisis de radar para: {nombre}")
 st.write(descripcion or "No hay descripción disponible para este caso.")
+partes = []
 if sensor != "N/D":
-    st.caption(f"Sensor: {sensor}")
+    partes.append(f"Sensor: {sensor}")
+if datos.get("polarizacion"):
+    partes.append(f"Polarización: {datos['polarizacion']}")
+if datos.get("fecha_antes") and datos.get("fecha_despues"):
+    partes.append(f"Imágenes: {datos['fecha_antes']} → {datos['fecha_despues']}")
+if partes:
+    st.caption(" · ".join(partes))
+if "no_validada" in str(datos.get("estado", "")):
+    st.info(
+        "Resultado exploratorio: superficie candidata a agua nueva, "
+        "sin validación independiente. Consulta las limitaciones más abajo."
+    )
 if carpeta is None:
     st.warning(
         "Aún no hay datos. Crea una carpeta `data/<caso>/` con `results.json` y "
@@ -300,6 +315,11 @@ else:
     else:
         st.info(f"[ Vista de radar con superposición de agua - {caso} ]")
 
+resumen = encontrar_imagen(carpeta, "resumen")
+if resumen:
+    with st.expander("Análisis completo de la escena (antes, después, cambio y resultado)"):
+        st.image(resumen, width="stretch")
+
 st.markdown("---")
 
 # ----------------------------------------------------------------------
@@ -316,47 +336,55 @@ if img_despues and hay_mascara:
     )
     d1.download_button(
         "⬇️ Imagen con zona inundada (PNG)", png_bytes,
-        file_name=f"{slug}_inundacion.png", mime="image/png", use_container_width=True,
+        file_name=f"{slug}_inundacion.png", mime="image/png", width="stretch",
     )
 else:
-    d1.button("⬇️ Imagen con zona inundada (PNG)", disabled=True, use_container_width=True)
+    d1.button("⬇️ Imagen con zona inundada (PNG)", disabled=True, width="stretch")
 
 if hay_mascara:
     d2.download_button(
         "⬇️ Máscara de agua (GeoTIFF)", ruta_mascara.read_bytes(),
-        file_name=f"{slug}_mascara_agua.tif", mime="image/tiff", use_container_width=True,
+        file_name=f"{slug}_mascara_agua.tif", mime="image/tiff", width="stretch",
     )
 else:
-    d2.button("⬇️ Máscara de agua (GeoTIFF)", disabled=True, use_container_width=True)
+    d2.button("⬇️ Máscara de agua (GeoTIFF)", disabled=True, width="stretch")
 
 if datos:
     d3.download_button(
         "⬇️ Resultados (JSON)", json.dumps(datos, indent=2, ensure_ascii=False),
-        file_name=f"{slug}_results.json", mime="application/json", use_container_width=True,
+        file_name=f"{slug}_results.json", mime="application/json", width="stretch",
     )
 else:
-    d3.button("⬇️ Resultados (JSON)", disabled=True, use_container_width=True)
+    d3.button("⬇️ Resultados (JSON)", disabled=True, width="stretch")
 
 # ----------------------------------------------------------------------
 # METRICAS
 # ----------------------------------------------------------------------
+pct_escena = primero(datos, ["porcentaje_candidato_original", "porcentaje_inundado"])
+n_manchas = primero(datos, ["componentes_en_cuadricula_metrica", "num_manchas"])
+perimetro = primero(datos, ["perimetro", "perimeter"])
+
 m1, m2, m3 = st.columns(3)
 m1.metric("Área Inundada", fmt(area_km2, 1, " km²"), datos.get("delta_area"))
-m2.metric(
-    "Población Afectada",
-    fmt(poblacion, 0, " hab") if poblacion is not None else "N/D",
-    datos.get("delta_poblacion"),
-)
-m3.metric(
-    "Fiabilidad de Detección SAR",
-    fmt(fiabilidad, 0, "%") if fiabilidad is not None else "N/D",
-    datos.get("delta_fiabilidad"),
-)
+
+# Si no hay poblacion / fiabilidad, se muestran metricas que si estan calculadas
+if poblacion is not None:
+    m2.metric("Población Afectada", fmt(poblacion, 0, " hab"), datos.get("delta_poblacion"))
+else:
+    m2.metric("Porcentaje de la escena", fmt(pct_escena, 1, "%"), "Píxeles candidatos / píxeles válidos")
+
+if fiabilidad is not None:
+    m3.metric("Fiabilidad de Detección SAR", fmt(fiabilidad, 0, "%"), datos.get("delta_fiabilidad"))
+else:
+    m3.metric("Manchas de agua detectadas", fmt(n_manchas, 0), "Componentes conectados")
 
 with st.expander("Detalles morfológicos"):
     m4, m5, m6 = st.columns(3)
-    m4.metric("Perímetro", fmt(primero(datos, ["perimetro", "perimeter"]), 1))
-    m5.metric("Compactación", fmt(primero(datos, ["compactacion", "compactness"]), 3))
+    if perimetro is not None and float(perimetro) >= 1000:
+        m4.metric("Perímetro", fmt(float(perimetro) / 1000, 1, " km"))
+    else:
+        m4.metric("Perímetro", fmt(perimetro, 1, " m"))
+    m5.metric("Compactación", fmt(primero(datos, ["compactacion", "compactness"]), 4))
     m6.metric("Elongación", fmt(primero(datos, ["elongacion", "elongation"]), 3))
     hu = primero(datos, ["momentos_hu", "hu_moments"])
     if hu:
@@ -365,6 +393,20 @@ with st.expander("Detalles morfológicos"):
             hide_index=True,
         )
 
+limitaciones = datos.get("limitaciones")
+parametros = datos.get("parametros")
+if limitaciones or parametros:
+    with st.expander("Limitaciones y método"):
+        if parametros:
+            st.markdown(
+                "**Parámetros de detección:** "
+                + ", ".join(f"`{k}` = {v}" for k, v in parametros.items())
+            )
+        if limitaciones:
+            st.markdown("**Limitaciones:**")
+            for lim in limitaciones:
+                st.markdown(f"- {lim}")
+
 # ----------------------------------------------------------------------
 # INFORME DE IA
 # ----------------------------------------------------------------------
@@ -372,11 +414,16 @@ st.markdown("### INFORME DE ANÁLISIS Generado por IA")
 
 stats_ia = {
     "Area inundada": fmt(area_km2, 1, " km2"),
-    "Hectareas afectadas": fmt(ha, 1, " ha"),
-    "Poblacion afectada": fmt(poblacion, 0, " hab") if poblacion is not None else "N/D",
-    "Elongacion de la mancha": fmt(primero(datos, ["elongacion", "elongation"]), 3),
-    "Compactacion": fmt(primero(datos, ["compactacion", "compactness"]), 3),
     "Sensor": sensor,
+    "Polarizacion": datos.get("polarizacion", "N/D"),
+    "Fecha antes": datos.get("fecha_antes", "N/D"),
+    "Fecha despues": datos.get("fecha_despues", "N/D"),
+    "Porcentaje de la escena con agua nueva": fmt(pct_escena, 1, " %"),
+    "Manchas de agua": fmt(n_manchas, 0),
+    "Elongacion de la mancha": fmt(primero(datos, ["elongacion", "elongation"]), 3),
+    "Poblacion afectada": fmt(poblacion, 0, " hab") if poblacion is not None else "N/D",
+    "Estado del resultado": datos.get("estado", "N/D"),
+    "Limitacion principal": (datos.get("limitaciones") or ["N/D"])[0],
 }
 
 clave_informe = f"informe::{caso}"

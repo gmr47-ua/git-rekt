@@ -18,5 +18,9 @@
   "centroide": {
     "lat": 39.55,
     "lon": -0.45
-  }
+  },
+  "poblacion_afectada": 129901,
+  "poblacion_total_zona": 990805,
+  "porcentaje_poblacion_afectada": 13.11,
+  "delta_poblacion": "WorldPop 2020 (estimación)"
 }

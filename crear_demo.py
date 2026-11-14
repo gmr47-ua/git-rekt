@@ -60,4 +60,4 @@ resultados = {
 with open(carpeta / "results.json", "w", encoding="utf-8") as f:
     json.dump(resultados, f, indent=2, ensure_ascii=False)
 
-print(f"Caso de prueba creado en {carpeta}  ({area_ha:.0f} ha de agua simulada)")
+print(f"Caso de prueba creado en {carpeta}  ({area_ha:.0f} ha de agua   simulada)")

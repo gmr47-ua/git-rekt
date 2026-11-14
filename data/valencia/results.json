@@ -1,0 +1,46 @@
+{
+  "nombre": "Posible inundación en Valencia y norte de la Albufera",
+  "descripcion": "Detección exploratoria de posible agua nueva en toda la cobertura común de los GeoTIFF del 2024-10-19 y 2024-10-31; no limitada a Paiporta.",
+  "sensor": "Sentinel-1 (banda C)",
+  "polarizacion": "VV",
+  "fecha_antes": "2024-10-19",
+  "fecha_despues": "2024-10-31",
+  "hectareas_afectadas": 1812.57,
+  "perimetro": 351240.0,
+  "compactacion": 0.0018462763845577554,
+  "elongacion": 0.6846299993282259,
+  "momentos_hu": [
+    0.3760738767811329,
+    0.018506282105464508,
+    0.09231606213110673,
+    0.12216450282057428,
+    0.012687189664837395,
+    0.012219460785654307,
+    0.002710381245092247
+  ],
+  "centroide": {
+    "lat": 39.386714659083204,
+    "lon": -0.35735456181846664
+  },
+  "estado": "deteccion_exploratoria_no_validada",
+  "pixeles_candidatos_originales": 234861,
+  "pixeles_validos_originales": 5385623,
+  "porcentaje_candidato_original": 4.360888238927975,
+  "componentes_en_cuadricula_metrica": 124,
+  "limitaciones": [
+    "No representa toda la extensión de la imagen óptica ni toda la Albufera.",
+    "No representa la inundación máxima de la DANA ni una superficie oficialmente afectada.",
+    "Las superficies oscuras previas se excluyen como aproximación; no constituyen agua permanente confirmada.",
+    "Los cambios agrícolas, humedad y sombras pueden producir falsos positivos; agua urbana o bajo vegetación puede omitirse.",
+    "Las métricas describen todas las zonas candidatas agregadas, no el municipio de Paiporta."
+  ],
+  "parametros": {
+    "agua_db": -17,
+    "caida_db": -3,
+    "filtro_media_lineal": 3,
+    "min_pixeles": 25,
+    "conectividad": 8
+  },
+  "poblacion_afectada": null,
+  "fiabilidad": null
+}
