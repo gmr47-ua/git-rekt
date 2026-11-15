@@ -1,4 +1,3 @@
-
 import base64
 import io
 import json
@@ -64,6 +63,7 @@ def listar_casos() -> dict:
 
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 COLOR_SENSOR = {"sentinel": "#1f6feb", "nisar": "#d9480f"}  # azul = Sentinel, naranja = NISAR
+COLOR_AGUA = {"sentinel": (0, 110, 255), "nisar": (255, 140, 0)}  # relleno de la mancha de agua
 
 
 def fecha_legible(iso):
@@ -101,8 +101,9 @@ def cargar_json(ruta: str, mtime: float):
 
 
 @st.cache_data(show_spinner="Preparando capa de agua...")
-def preparar_overlay(ruta: str, mtime: float):
-    """Mascara -> PNG RGBA azul reproyectado a EPSG:4326 + limites [[S,O],[N,E]]."""
+def preparar_overlay(ruta: str, mtime: float, color=(0, 110, 255)):
+    """Mascara -> PNG RGBA del color indicado, reproyectado a EPSG:4326 + limites [[S,O],[N,E]].
+    Sirve para cualquier CRS (la de Sentinel esta en lat/lon y la de NISAR en UTM)."""
     with rasterio.open(ruta) as src:
         dst_crs = "EPSG:4326"
         transform, ancho, alto = calculate_default_transform(
@@ -121,7 +122,7 @@ def preparar_overlay(ruta: str, mtime: float):
         oeste, sur, este, norte = array_bounds(alto, ancho, transform)
 
     rgba = np.zeros((alto, ancho, 4), dtype=np.uint8)
-    rgba[destino == 1] = [0, 110, 255, 255]
+    rgba[destino == 1] = [*color, 255]
     buf = io.BytesIO()
     Image.fromarray(rgba, mode="RGBA").save(buf, format="PNG", optimize=True)
     return base64.b64encode(buf.getvalue()).decode("ascii"), [[sur, oeste], [norte, este]]
@@ -221,7 +222,8 @@ def imagen_con_agua_png(ruta_d: str, ruta_m: str, opacidad: float, mtime_d: floa
     return buf.getvalue()
 
 
-def construir_mapa(png_b64, limites, centro, opacidad):
+def construir_mapa(png_b64, limites, centro, opacidad, zonas=None, agua_nisar=None):
+    """zonas: lista de (nombre, poligono [[lat, lon], ...], color) con la cobertura de cada sensor."""
     m = folium.Map(location=centro, tiles=None, control_scale=True)
     folium.TileLayer("OpenStreetMap", name="Calles (OSM)").add_to(m)
     folium.TileLayer(
@@ -233,11 +235,32 @@ def construir_mapa(png_b64, limites, centro, opacidad):
         image="data:image/png;base64," + png_b64,
         bounds=limites,
         opacity=opacidad,
-        name="Zona inundada (SAR)",
+        name="🟦 Agua nueva Sentinel-1 (banda C)",
         interactive=False,
         zindex=2,
     ).add_to(m)
-    m.fit_bounds(limites)
+    if agua_nisar:  # (png_b64, limites) de la mascara de NISAR, en otro color
+        folium.raster_layers.ImageOverlay(
+            image="data:image/png;base64," + agua_nisar[0],
+            bounds=agua_nisar[1],
+            opacity=opacidad,
+            name="🟧 Agua nueva NISAR (banda L)",
+            interactive=False,
+            zindex=3,
+        ).add_to(m)
+    todos = [limites[0], limites[1]]
+    for nombre_z, poligono, color in (zonas or []):
+        folium.Polygon(
+            locations=poligono,
+            color=color, weight=3, fill=True, fill_color=color, fill_opacity=0.07,
+            tooltip=nombre_z, name=nombre_z,
+            interactive=True,   # solo el borde/relleno ligero; no tapa el mapa
+        ).add_to(m)
+        todos.extend(poligono)
+    # Encuadre: que quepan TODAS las zonas (NISAR es la mayor), no solo la mascara
+    lats = [p[0] for p in todos]
+    lons = [p[1] for p in todos]
+    m.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
     folium.LayerControl(collapsed=False).add_to(m)
     return m
 
@@ -384,17 +407,52 @@ elif modo_vista.startswith("Comparación NISAR"):
 else:
     if hay_mascara:
         try:
-            png_b64, limites = preparar_overlay(str(ruta_mascara), ruta_mascara.stat().st_mtime)
+            png_b64, limites = preparar_overlay(
+                str(ruta_mascara), ruta_mascara.stat().st_mtime, COLOR_AGUA["sentinel"]
+            )
+            ruta_mascara_n = carpeta / "nisar_mascara_agua.tif"
+            agua_nisar = None
+            if ruta_mascara_n.exists():
+                agua_nisar = preparar_overlay(
+                    str(ruta_mascara_n), ruta_mascara_n.stat().st_mtime, COLOR_AGUA["nisar"]
+                )
             centro = parse_centroide(primero(datos, ["centroide", "centroid"])) or (
                 (limites[0][0] + limites[1][0]) / 2,
                 (limites[0][1] + limites[1][1]) / 2,
             )
+            zonas = [(
+                "🟦 Zona Sentinel-1 (banda C)",
+                [[limites[0][0], limites[0][1]], [limites[1][0], limites[0][1]],
+                 [limites[1][0], limites[1][1]], [limites[0][0], limites[1][1]]],
+                COLOR_SENSOR["sentinel"],
+            )]
+            if nisar.get("poligono_wgs84"):
+                zonas.append(("🟧 Zona NISAR (banda L)", nisar["poligono_wgs84"], COLOR_SENSOR["nisar"]))
             st_folium(
-                construir_mapa(png_b64, limites, centro, opacidad),
+                construir_mapa(png_b64, limites, centro, opacidad, zonas, agua_nisar),
                 width=None,
                 height=600,
                 returned_objects=[],
             )
+            c1, c2 = st.columns(2)
+            with c1:
+                chip_sensor("Zona Sentinel-1 (banda C)", "sentinel")
+            with c2:
+                if nisar.get("poligono_wgs84"):
+                    chip_sensor("Zona NISAR (banda L) · más extensa", "nisar")
+                elif nisar:
+                    st.caption("Vuelve a ejecutar `exportar_nisar.py` para dibujar también la zona de NISAR.")
+            det = nisar.get("deteccion")
+            if agua_nisar and det:
+                st.caption(
+                    f"Agua nueva en azul = Sentinel-1 ({fecha_legible(datos.get('fecha_antes'))} → "
+                    f"{fecha_legible(datos.get('fecha_despues'))}). Agua nueva en naranja = NISAR "
+                    f"({fecha_legible(nisar.get('fecha_antes'))} → {fecha_legible(nisar.get('fecha_despues'))}, "
+                    f"≈ {det['hectareas_afectadas'] / 100:.1f} km² candidatos). "
+                    "Son eventos y fechas distintos: no se pueden sumar ni comparar como un solo resultado."
+                )
+            elif nisar and not agua_nisar:
+                st.caption("Falta `nisar_mascara_agua.tif`: vuelve a ejecutar `exportar_nisar.py` para dibujar el agua de NISAR.")
         except Exception as e:
             st.error(f"No se pudo leer `{ruta_mascara}`: {e}")
     else:

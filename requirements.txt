@@ -7,10 +7,16 @@ streamlit-folium
 rasterio
 numpy
 pillow
+scipy
+matplotlib
 
-# --- Procesamiento (procesamiento.py) ---
+# --- Procesamiento ---
 opencv-python-headless
 
-# --- IA (ia_informe.py) ---
+# --- Poblacion (poblacion.py) ---
+requests
+pycountry
+
+# --- IA (qwen.py) ---
 openai
 python-dotenv
