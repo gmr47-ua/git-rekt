@@ -681,7 +681,7 @@ ruta_resumen_sentinel = (
     if carpeta else None
 )
 
-ruta_resumen_nisar = BASE_DIR / "resultadosNASIR" / "resumen_inundacion.png"
+ruta_resumen_nisar = BASE_DIR / "resultadosNISAR" / "resumen_inundacion.png"
 
 # Mostrar el resumen correspondiente al modo seleccionado
 if modo_vista == "nisar":

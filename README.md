@@ -191,6 +191,8 @@ evenly inside each cell). It is not a count of people actually affected.
 ### Step 5 — Add NISAR images and water layer
 
 ```bash
+python procedimiento.py --antes nisar_before.tif --despues nisar_after.tif --salida resultadosNISAR --sin-ventana
+
 python exportar_nisar.py nisar_before.tif nisar_after.tif data/my_region
 ```
 
