@@ -1,11 +1,24 @@
-# git-rekt
-
 # FloodyLens — SAR flood-change viewer (NISAR + Sentinel-1)
 
 Built by team **git-rekt** for the NASA Space Apps Challenge 2026
 (*"Earth's surface in motion: tracking change with NISAR radar"*).
 
 <img width="1600" height="533" alt="FloodyLensLogo" src="https://github.com/user-attachments/assets/f290590d-9850-481f-8a83-c02d43340f10" />
+
+---
+
+# **git-rekt team:** 
+- Unai López González, 
+- Javier López Castellanos, 
+- Gabriel Morcillo Rubio,
+- Pedro Femenía Córdoba,
+- Marius Antonio Nica.
+
+**Oficial Website:** https://floodylens-web.slc5o2.easypanel.host
+
+---
+
+# **About the project:**
 
 FloodyLens takes **two radar (SAR) images of the same place, before and after an event**, finds the areas
 that became dark (calm water reflects the radar signal away from the satellite), and presents the result in
