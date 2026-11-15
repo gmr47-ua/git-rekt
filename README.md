@@ -435,6 +435,9 @@ time by a language model (see section 5). It is illustrative and has not been va
 Platform)**, a tool provided by the European Space Agency (ESA), used for satellite image preprocessing and analysis
 (see section 9).
 
+The use of conversational Artificial Intelligence models is declared for technical research and information-gathering tasks. 
+Specifically, they are used to understand how the ESA SNAP program works, as well as to analyze the data obtained in .tif format and all of its characteristics.
+
 ---
 
 ## 12. Data credits
