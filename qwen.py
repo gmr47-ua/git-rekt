@@ -12,16 +12,30 @@ load_dotenv()
 BASE_URL = os.getenv("MODELSCOPE_BASE_URL", "https://api-inference.modelscope.ai/v1")
 MODEL_ID = os.getenv("MODELSCOPE_MODEL", "Qwen-Ambassador/Qwen3.8-Omni-Flash")
 
-SYSTEM_PROMPT = """Eres FloodLens AI, un asistente experto en hidrología, teledetección y gestión de emergencias por inundaciones.
+SYSTEM_PROMPT_ES = """Eres FloodyLens AI, un asistente experto en hidrología, teledetección (radar SAR, Sentinel-1, NISAR) y gestión de emergencias por inundaciones.
 Tu objetivo es analizar los datos estructurados en formato JSON recibidos desde la aplicación de detección y sensores para generar un informe de situación claro, profesional y estructurado en Markdown.
 
-El informe debe estructurarse con los siguientes puntos:
+El informe debe redactarse íntegramente en español (incluidos todos los títulos de sección y niveles de alerta) y estructurarse con los siguientes puntos:
 1. 🚨 **Nivel de Alerta y Resumen Ejecutivo**: Nivel de riesgo (Verde / Amarillo / Naranja / Rojo) y resumen del estado de emergencia.
-2. 📊 **Evaluación de Datos Clave**: Interpretación de lluvia acumulada, niveles de caudal vs. umbrales y áreas anegadas.
-3. 📍 **Zonas Afectadas e Impacto**: Infraestructuras críticas comprometidas y población en riesgo.
-4. 🛠️ **Recomendaciones y Plan de Acción Inmediato**: Medidas de mitigación, zonas a evacuar y avisos a la población o autoridades.
+2. 📊 **Evaluación de Datos Clave**: Interpretación del área anegada, datos de radar SAR, porcentaje de la escena y características morfológicas.
+3. 📍 **Zonas Afectadas e Impacto**: Localización geográfica, impacto estimado en población e infraestructuras críticas en riesgo.
+4. 🛠️ **Recomendaciones y Plan de Acción Inmediato**: Medidas de mitigación, zonas prioritarias y avisos a autoridades o población.
 
 Usa un tono técnico pero accesible para la toma de decisiones rápidas."""
+
+SYSTEM_PROMPT_EN = """You are FloodyLens AI, an expert assistant in hydrology, satellite remote sensing (SAR radar, Sentinel-1, NISAR), and flood emergency management.
+Your goal is to analyze structured JSON data received from the detection application and sensors to generate a clear, professional, and well-structured situation report in Markdown.
+
+The report MUST be written entirely in English (including all section titles and risk levels) and follow this exact structure:
+1. 🚨 **Alert Level and Executive Summary**: Risk level (Green / Yellow / Orange / Red) and summary of the emergency situation.
+2. 📊 **Key Data Assessment**: Interpretation of flooded area, SAR radar metrics, percentage of the scene, and morphological characteristics.
+3. 📍 **Affected Areas and Impact**: Geographic location, estimated population impact, and critical infrastructure at risk.
+4. 🛠️ **Recommendations and Immediate Action Plan**: Mitigation measures, priority response areas, and actionable advisories for authorities or the public.
+
+Use a technical yet accessible and actionable tone for rapid decision-making."""
+
+# Compatibilidad hacia atrás
+SYSTEM_PROMPT = SYSTEM_PROMPT_ES
 
 
 def get_client() -> OpenAI:
@@ -64,6 +78,7 @@ def generar_informe(
     datos_json: Union[dict, list, str, Path],
     stream: bool = False,
     instrucciones_extra: Optional[str] = None,
+    idioma: Optional[str] = None,
 ) -> Union[str, Generator[str, None, None]]:
     """
     Recibe los datos en formato JSON de la aplicación y solicita a Qwen
@@ -73,24 +88,42 @@ def generar_informe(
     :param stream: Si es True, devuelve un generador que emite fragmentos de texto (ideal para UIs en tiempo real).
                    Si es False, devuelve el informe completo como string.
     :param instrucciones_extra: Instrucciones opcionales añadidas al prompt (ej. "enfócate en evacuación").
+    :param idioma: Idioma del informe ('es' o 'en'). Si no se especifica, se detecta de instrucciones_extra o por defecto 'es'.
     :return: String con el informe completo o Generador de chunks de texto si stream=True.
     """
     json_str = _convertir_a_json_string(datos_json)
     client = get_client()
 
-    prompt_usuario = (
-        f"Analiza los siguientes datos JSON de inundación y genera el informe técnico:\n\n"
-        f"```json\n{json_str}\n```"
-    )
+    # Detectar si el idioma solicitado es inglés
+    es_ingles = False
+    if idioma:
+        es_ingles = str(idioma).strip().lower().startswith("en")
+    elif instrucciones_extra:
+        inst_lower = instrucciones_extra.lower()
+        es_ingles = any(k in inst_lower for k in ("english", "inglés", "ingles", "in english"))
 
-    if instrucciones_extra:
-        prompt_usuario += f"\n\nInstrucciones adicionales: {instrucciones_extra}"
+    if es_ingles:
+        system_prompt = SYSTEM_PROMPT_EN
+        prompt_usuario = (
+            f"Analyze the following flood JSON data and generate the technical report in English:\n\n"
+            f"```json\n{json_str}\n```"
+        )
+        if instrucciones_extra:
+            prompt_usuario += f"\n\nAdditional instructions: {instrucciones_extra}"
+    else:
+        system_prompt = SYSTEM_PROMPT_ES
+        prompt_usuario = (
+            f"Analiza los siguientes datos JSON de inundación y genera el informe técnico:\n\n"
+            f"```json\n{json_str}\n```"
+        )
+        if instrucciones_extra:
+            prompt_usuario += f"\n\nInstrucciones adicionales: {instrucciones_extra}"
 
     # Nota: Los modelos Omni en ModelScope funcionan con stream=True
     completion = client.chat.completions.create(
         model=MODEL_ID,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt_usuario},
         ],
         stream=True,
@@ -111,15 +144,24 @@ def generar_informe(
         return "".join(partes)
 
 
-def informe_local(nombre: str, stats: dict) -> str:
+def informe_local(nombre: str, stats: dict, idioma: str = "es") -> str:
     """Texto de respaldo sin IA (por si falla la red o la API)."""
+    if str(idioma).strip().lower().startswith("en"):
+        area = stats.get("Area inundada", stats.get("Flooded area", "N/A"))
+        sensor = stats.get("Sensor", "N/A")
+        return (
+            f"In **{nombre}** the SAR analysis ({sensor}) detects a flooded area of {area}. "
+            "Calm water reflects the radar signal away from the satellite and looks dark, "
+            "which makes it possible to map it even through clouds or at night. "
+            "NISAR (L-band) data will extend this monitoring to a global scale."
+        )
     area = stats.get("Area inundada", "N/D")
     sensor = stats.get("Sensor", "N/D")
     return (
-        f"En **{nombre}** el analisis SAR ({sensor}) detecta un area inundada de {area}. "
-        "El agua en calma refleja la senal del radar lejos del satelite y aparece oscura, "
+        f"En **{nombre}** el análisis SAR ({sensor}) detecta un área inundada de {area}. "
+        "El agua en calma refleja la señal del radar lejos del satélite y aparece oscura, "
         "lo que permite delimitarla incluso con nubes o de noche. "
-        "Los datos de NISAR (banda L) permitiran ampliar este seguimiento a nivel global."
+        "Los datos de NISAR (banda L) permitirán ampliar este seguimiento a nivel global."
     )
 
 
