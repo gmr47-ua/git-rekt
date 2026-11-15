@@ -312,9 +312,122 @@ What the app expects inside `data/<case>/`:
 
 ---
 
-## 9. Data credits
+## 9. Data architecture and SAR processing (current state)
+
+The analytical core of the prototype is the extraction of **water masks from Synthetic Aperture Radar (SAR)
+imagery**.
+
+**Preprocessing with SNAP.** At present, the raw satellite data is preprocessed with ESA's **SNAP (Sentinel
+Application Platform)**. We designed a geometric and radiometric workflow (Graph Builder) that applies
+**thermal noise removal**, **calibration to backscatter** (σ⁰, VV polarization for the Sentinel-1 pair) and
+**Range-Doppler Terrain Correction** using Digital Elevation Models. This workflow is meant to provide the spatial
+accuracy needed to line up the detected water pixels with the streets of the affected municipalities. However, it
+currently requires running the graphs **manually**.
+
+**Where the manual/automatic line is today**
+
+| Stage | Status |
+|---|---|
+| Downloading the SAR scenes and preprocessing them in SNAP | Manual |
+| Change detection, metrics, export, population estimate, NISAR panel and web app | Scripted in Python (see section 4 for the commands and section 11 for the code), starting from calibrated, linear-backscatter GeoTIFFs |
+
+**Next engineering milestone: a fully automated pipeline.** The goal is to replace SNAP's graphical interface with
+scripted ingestion (for example, integrating the Copernicus / NASA Earthdata APIs and batch-processing libraries)
+that downloads, filters and exports the GeoTIFF arrays without human intervention, so that the system can run
+autonomously in response to any weather alert. This is closely related to the *"Real-time cloud processing
+(bypassing SNAP)"* pillar of the roadmap shown at the bottom of the app.
+
+---
+
+## 10. Project structure and code modules
+
+A short guide to what each file contains and does. The commands to run them are in section 4, and the files the
+app expects inside `data/<case>/` are listed in section 6.
+
+### Processing (offline, run once per event)
+
+- **`procedimiento.py` — core SAR change detection.** Reads the before/after GeoTIFFs (single band, linear
+  backscatter), discards invalid pixels and, if the grids differ, reprojects the *after* image onto the *before*
+  grid. It smooths both with a 3×3 mean filter in linear power (ignoring no-data), converts to dB and applies the
+  detection rule: darker than −17 dB *after*, not that dark *before*, and a drop of at least 3 dB; patches under
+  25 pixels (8-connectivity) are removed. The thresholds are fixed values set from the command line (not adaptive),
+  and the module relies on NumPy, SciPy and rasterio (it does not use OpenCV). It outputs the candidate mask
+  (1 / 0 / 255 = no data), a four-class classification, change and filtered images in dB, `estadisticas.json` and a
+  4-panel summary figure (matplotlib) in which you can click a pixel to read its values.
+- **`exportar_app.py` — bridge to the app.** Takes the `resultados/` folder and builds `data/<case>/`: a clean 0/1
+  water mask, `antes.png` / `despues.png` (grayscale, −25…0 dB), the summary figure and `results.json`. The metrics
+  are computed on a metric grid (UTM, 10 m): area in hectares, perimeter (exposed pixel edges), compactness,
+  elongation, the seven Hu moments (implemented in NumPy), centroid and number of patches. It keeps any keys that
+  other scripts already wrote (e.g. the population) and holds the editable list of limitations.
+- **`exportar_nisar.py` — NISAR preparation.** Takes two NISAR GeoTIFFs (HH, linear γ⁰) and writes
+  `nisar_antes.png` and `nisar_despues.png` (−30…0 dB, 3×3 mean), `nisar.json` (sensor, dates parsed from the file
+  names, WGS84 footprint polygon, detection statistics) and `nisar_mascara_agua.tif`, using the same detection
+  logic as `procedimiento.py`. The two images must share exactly the same grid.
+- **`poblacion.py` — population exposure.** Estimates the population exposed to the flood: it crosses the water
+  mask with a WorldPop population raster (people per pixel) and can automatically download the raster for the area.
+  The country is detected with OpenStreetMap Nominatim (plus an ISO3 code) unless `--iso3` is given. It reads only
+  the needed window of the WorldPop 2020 raster over HTTP and, if that fails, falls back to a size-checked full
+  download cached in `cache_worldpop/`. It then reprojects the mask onto the population grid and sums
+  *population × flooded fraction* per cell. The result goes into `results.json` (`poblacion_afectada`,
+  `poblacion_total_zona`, `porcentaje_poblacion_afectada`). It is a modelled estimate based on 2020 data, not a
+  count of people actually affected.
+
+### Interface and AI (what the user sees)
+
+- **`app.py` — Streamlit dashboard and interactive demo.** Reads the files in `data/<case>/` and does no heavy radar
+  processing (only a light, cached reprojection of the masks for the map), which keeps the page fast. It provides:
+  - a case selector and three views: Sentinel-1 swipe slider, NISAR swipe slider (with a comparability warning),
+    and a Folium map with OpenStreetMap and Esri satellite base layers, the Sentinel-1 water layer in blue, the
+    NISAR layer in orange, the coverage polygon of each sensor, a layer control and an opacity slider;
+  - expanders with the summary figures, download buttons (PNG with the water overlay, mask GeoTIFF, results JSON)
+    and metric cards that fall back to computed values when population or reliability are missing;
+  - the limitations, the AI report, the future roadmap and the demo disclosure;
+  - an **English / Spanish toggle** in the header: interface texts live in the `TEXTOS` dictionary, and texts that
+    come from `results.json` are translated through `<field>_en` keys or a translation table.
+- **`qwen.py` — AI report client.** Sends the case's *metrics* (the JSON, not the raster) to a language model through
+  an OpenAI-compatible API (ModelScope by default; the key and model are read from `.env`). Its system prompts, in
+  Spanish and English, ask for a four-part situation report: alert level, key data, affected areas and
+  recommendations. The answer is streamed into the app. If the key is missing or the call fails, `informe_local()`
+  returns a short offline text. Since the detection is unvalidated, treat the generated report as illustrative.
+- **Frontend components (inside `app.py`).** There is no separate assets folder or CSS file: the swipe slider
+  (HTML, CSS and JavaScript) and the sensor-coloured chips are HTML embedded in the Streamlit app. The images they
+  display are generated files in `data/<case>/`.
+
+### Support files and folders
+
+- **`crear_demo.py`** — generates a *synthetic* test case in `data/demo/` (an elliptical water patch, fake
+  before/after images and a GeoTIFF mask in UTM 30N near Valencia) to check that the installation works. It is not
+  real data; delete `data/demo/` before presenting.
+- **`requirements.txt`** — Python dependencies. `.env` (not committed) holds `MODELSCOPE_API_KEY`.
+- **`data/<case>/`** — one folder per case study, read by the app.
+- **`resultados/`, `resultadosNISAR/`, `cache_worldpop/`** — generated intermediate folders. The app reads the NISAR
+  summary figure from `resultadosNISAR/resumen_inundacion.png` in the repository root.
+
+---
+
+## 11. Use of AI and third-party tools
+
+**Development with AI assistance.** This application and the image-processing code have been developed with the
+assistance of artificial intelligence. This covers `app.py`, `crear_demo.py`, `exportar_app.py`,
+`exportar_nisar.py`, `poblacion.py`, `procedimiento.py` and `qwen.py`.
+
+**Explanations and documentation.** The explanations that accompany the project have also been generated with the
+help of artificial intelligence: this README, the docstrings and comments in the code, and the explanatory texts
+shown in the app.
+
+**AI report inside the app.** The situation report produced by the *"Update AI report"* button is written at run
+time by a language model (see section 5). It is illustrative and has not been validated.
+
+**SNAP.** The download and processing of the SAR images have been carried out using **SNAP (Sentinel Application
+Platform)**, a tool provided by the European Space Agency (ESA), used for satellite image preprocessing and analysis
+(see section 9).
+
+---
+
+## 12. Data credits
 
 - Sentinel-1: contains modified Copernicus Sentinel data (ESA / European Commission).
 - NISAR: NASA–ISRO SAR mission data.
 - Population: WorldPop (University of Southampton).
 - Basemaps: OpenStreetMap contributors; Esri World Imagery.
+
