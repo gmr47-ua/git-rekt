@@ -329,7 +329,7 @@ currently requires running the graphs **manually**.
 | Stage | Status |
 |---|---|
 | Downloading the SAR scenes and preprocessing them in SNAP | Manual |
-| Change detection, metrics, export, population estimate, NISAR panel and web app | Scripted in Python (see section 4 for the commands and section 11 for the code), starting from calibrated, linear-backscatter GeoTIFFs |
+| Change detection, metrics, export, population estimate, NISAR panel and web app | Scripted in Python (see section 4 for the commands and section 10 for the code), starting from calibrated, linear-backscatter GeoTIFFs |
 
 **Next engineering milestone: a fully automated pipeline.** The goal is to replace SNAP's graphical interface with
 scripted ingestion (for example, integrating the Copernicus / NASA Earthdata APIs and batch-processing libraries)
