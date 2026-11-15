@@ -17,7 +17,8 @@ from dotenv import load_dotenv
 from qwen import generar_informe, informe_local
 
 load_dotenv()  # Carga variables de entorno desde .env
-DATA_DIR = Path("data")
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
 
 st.set_page_config(page_title="FloodyLens", page_icon="🌊", layout="wide")
 
@@ -45,8 +46,8 @@ TEXTOS = {
     "sin_datos": ("Sin datos todavia", "No data yet"),
     "opciones_vis": ("Opciones de visualización", "Display options"),
     "modo_sel": ("Selecciona el modo de visualización", "Select the display mode"),
-    "modo_directa": ("Comparación directa (antes/después)", "Direct comparison (before/after)"),
-    "modo_nisar": ("Comparación NISAR (banda L)", "NISAR comparison (L-band)"),
+    "modo_directa": ("Comparación SENTINEL 1", "Comparison SENTINEL 1"),
+    "modo_nisar": ("Comparación NISAR", "NISAR comparison"),
     "modo_capa": ("Superposición de radar (Capa de agua)", "Radar overlay (water layer)"),
     "opacidad": ("Nivel de opacidad de la capa de agua", "Water layer opacity"),
     "tip_radar": (
@@ -97,12 +98,10 @@ TEXTOS = {
         "Could not load the NISAR images: {e}",
     ),
     "warn_nisar": (
-        "**No es el mismo evento que el análisis de Sentinel-1.** Las fechas son distintas y los "
-        "sensores también (banda L frente a banda C), así que los valores en dB no son "
+        "**No es el mismo evento que el análisis de Sentinel-1.** Las fechas son distintas, así que los valores en dB no son "
         "directamente comparables. Las métricas de más abajo (área, informe de IA) "
         "proceden únicamente de Sentinel-1.",
-        "**This is not the same event as the Sentinel-1 analysis.** The dates differ and so do the "
-        "sensors (L-band versus C-band), so the dB values are not directly comparable. "
+        "**This is not the same event as the Sentinel-1 analysis.** The dates differ, so the dB values are not directly comparable. "
         "The metrics below (area, AI report) come from Sentinel-1 only.",
     ),
     "info_falta_nisar": (
@@ -112,12 +111,12 @@ TEXTOS = {
         "Generate them with `py exportar_nisar.py <before.tif> <after.tif> data/<case>`.",
     ),
     # mapa
-    "capa_s1": ("🟦 Agua nueva Sentinel-1 (banda C)", "🟦 New water Sentinel-1 (C-band)"),
-    "capa_nisar": ("🟧 Agua nueva NISAR (banda L)", "🟧 New water NISAR (L-band)"),
-    "zona_s1": ("🟦 Zona Sentinel-1 (banda C)", "🟦 Sentinel-1 (C-band) coverage"),
-    "zona_nisar": ("🟧 Zona NISAR (banda L)", "🟧 NISAR (L-band) coverage"),
-    "chip_zona_s1": ("Zona Sentinel-1 (banda C)", "Sentinel-1 (C-band) coverage"),
-    "chip_zona_nisar": ("Zona NISAR (banda L) · más extensa", "NISAR (L-band) coverage · larger"),
+    "capa_s1": ("🟦 Agua nueva Sentinel-1", "🟦 New water Sentinel-1"),
+    "capa_nisar": ("🟧 Agua nueva NISAR", "🟧 New water NISAR"),
+    "zona_s1": ("🟦 Zona Sentinel-1", "🟦 Sentinel-1 coverage"),
+    "zona_nisar": ("🟧 Zona NISAR", "🟧 NISAR coverage"),
+    "chip_zona_s1": ("Zona Sentinel-1 ", "Sentinel-1  coverage"),
+    "chip_zona_nisar": ("Zona NISAR · más extensa", "NISAR coverage · larger"),
     "cap_reejecutar": (
         "Vuelve a ejecutar `exportar_nisar.py` para dibujar también la zona de NISAR.",
         "Run `exportar_nisar.py` again to also draw the NISAR coverage.",
@@ -176,6 +175,18 @@ TEXTOS = {
         "Redacta todo el informe en español.",
         "Write the entire report in English, including the section titles.",
     ),
+    "aviso_demo": (
+    "**Sobre esta demostración:** Esta aplicación y los códigos de tratamiento de imágenes "
+    "han sido desarrollados con ayuda de inteligencia artificial (app.py, crear_demo.py, exportar_app.py, exportar:nisar.py, poblacion.py, procedimiento.py qwen.py). La descarga y el procesamiento "
+    "de las imágenes SAR se han realizado mediante SNAP (Sentinel Application Platform), "
+    "herramienta proporcionada por la Agencia Espacial Europea (ESA), utilizada para el "
+    "preprocesamiento y análisis de las imágenes satelitales.",
+    "**About this demonstration:** This application and the image processing code "
+    "have been developed with the assistance of artificial intelligence (app.py, crear_demo.py, exportar_app.py, exportar:nisar.py, poblacion.py, procedimiento.py qwen.py). The download "
+    "and processing of SAR images have been carried out using SNAP (Sentinel Application Platform), "
+    "a tool provided by the European Space Agency (ESA), used for satellite image "
+    "preprocessing and analysis."
+    ),
 }
 
 
@@ -233,7 +244,7 @@ def campo(d, clave, defecto=None):
 
 
 def trad_sensor(s):
-    """'Sentinel-1 (banda C)' -> 'Sentinel-1 (C-band)' en inglés."""
+    """'Sentinel-1' -> 'Sentinel-1' en inglés."""
     if s and st.session_state.get("lang") == "en":
         return re.sub(r"\(banda ([A-Za-z])\)", r"(\1-band)", s)
     return s
@@ -560,21 +571,16 @@ cab_idioma.button(t("boton_idioma"), on_click=cambiar_idioma, key="btn_idioma", 
 st.subheader(t("titulo_analisis", nombre=nombre))
 st.write(descripcion or t("sin_desc"))
 partes = []
-if sensor:
-    partes.append(t("cap_sensor", v=sensor))
-if datos.get("polarizacion"):
-    partes.append(t("cap_pol", v=datos["polarizacion"]))
 if datos.get("fecha_antes") and datos.get("fecha_despues"):
     partes.append(t("cap_img", a=datos["fecha_antes"], d=datos["fecha_despues"]))
 if partes:
     st.caption(" · ".join(partes))
+
 if nisar:
-    st.caption(t(
-        "cap_nisar_extra",
-        sensor=trad_sensor(nisar.get("sensor", "NISAR")), pol=nisar.get("polarizacion", t("nd")),
-        a=fecha_legible(nisar.get("fecha_antes")), d=fecha_legible(nisar.get("fecha_despues")),
-        modo=t("modo_nisar"),
-    ))
+    st.caption(
+        f"{fecha_legible(nisar.get('fecha_antes'))} → "
+        f"{fecha_legible(nisar.get('fecha_despues'))}"
+    )
 if "no_validada" in str(datos.get("estado", "")):
     st.info(t("info_exploratorio"))
 if carpeta is None:
@@ -584,8 +590,8 @@ if modo_vista == "directa":
     img_a = encontrar_imagen(carpeta, "antes")
     img_d = encontrar_imagen(carpeta, "despues")
     if img_a and img_d:
-        etiqueta_s1 = f"🛰️ {sensor or trad_sensor('Sentinel-1 (banda C)')}"
-        chip_sensor(etiqueta_s1 + f" · {datos.get('polarizacion', t('nd'))}", "sentinel")
+        etiqueta_s1 = "🛰️ Sentinel-1"
+        chip_sensor(etiqueta_s1, "sentinel")
         st.caption(t("cap_slider"))
         try:
             mostrar_slider(
@@ -603,8 +609,8 @@ elif modo_vista == "nisar":
     n_a = encontrar_imagen(carpeta, "nisar_antes")
     n_d = encontrar_imagen(carpeta, "nisar_despues")
     if n_a and n_d:
-        etiqueta_n = f"📡 {trad_sensor(nisar.get('sensor', 'NISAR (banda L)'))}"
-        chip_sensor(etiqueta_n + f" · {nisar.get('polarizacion', t('nd'))}", "nisar")
+        etiqueta_n = "📡 NISAR"
+        chip_sensor(etiqueta_n, "nisar")
         st.caption(t("cap_nisar_slider", a=fecha_legible(nisar.get("fecha_antes")),
                      d=fecha_legible(nisar.get("fecha_despues"))))
         try:
@@ -671,12 +677,35 @@ else:
     else:
         st.info(t("ph_capa", caso=caso))
 
-resumen = encontrar_imagen(carpeta, "resumen")
-if resumen:
-    with st.expander(t("exp_resumen")):
-        st.image(resumen, width="stretch")
 
-st.markdown("---")
+# ----------------------------------------------------------------------
+# RESUMEN DE IMÁGENES
+# ----------------------------------------------------------------------
+
+# Rutas absolutas de los resúmenes
+ruta_resumen_sentinel = (
+    encontrar_imagen(carpeta, "resumen")
+    if carpeta else None
+)
+
+ruta_resumen_nisar = BASE_DIR / "resultadosNASIR" / "resumen_inundacion.png"
+
+# Mostrar el resumen correspondiente al modo seleccionado
+if modo_vista == "nisar":
+
+    if ruta_resumen_nisar.is_file():
+        with st.expander("Resumen de inundación NISAR", expanded=True):
+            st.image(str(ruta_resumen_nisar), width="stretch")
+    else:
+        st.error(
+            f"No se encuentra el resumen NISAR en: {ruta_resumen_nisar}"
+        )
+
+elif modo_vista == "directa" or modo_vista == "capa":
+
+    if ruta_resumen_sentinel:
+        with st.expander(t("exp_resumen"), expanded=True):
+            st.image(ruta_resumen_sentinel, width="stretch")
 
 # ----------------------------------------------------------------------
 # DESCARGAS
@@ -770,8 +799,7 @@ st.markdown(t("h_informe"))
 
 stats_ia = {
     "Area inundada": fmt(area_km2, 1, " km2"),
-    "Sensor": sensor or t("nd"),
-    "Polarizacion": datos.get("polarizacion", t("nd")),
+    "Sensor": "Sentinel-1",
     "Fecha antes": datos.get("fecha_antes", t("nd")),
     "Fecha despues": datos.get("fecha_despues", t("nd")),
     "Porcentaje de la escena con agua nueva": fmt(pct_escena, 1, " %"),
@@ -813,3 +841,11 @@ else:
         st.markdown(texto)
     else:
         st.markdown(f"> {texto}")
+# ----------------------------------------------------------------------
+# AVISO FINAL
+# ----------------------------------------------------------------------
+
+st.markdown("---")
+
+st.info(t("aviso_demo"))
+
