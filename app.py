@@ -252,14 +252,7 @@ def trad_sensor(s):
 
 def informe_local_t(nombre, stats):
     """Texto de respaldo sin IA, en el idioma activo."""
-    if st.session_state.get("lang") == "en":
-        return (
-            f"In **{nombre}** the SAR analysis ({stats.get('Sensor', 'N/A')}) detects a flooded area of "
-            f"{stats.get('Area inundada', 'N/A')}. Calm water reflects the radar signal away from the "
-            "satellite and looks dark, which makes it possible to map it even through clouds or at night. "
-            "NISAR (L-band) data will extend this monitoring to a global scale."
-        )
-    return informe_local(nombre, stats)
+    return informe_local(nombre, stats, idioma=st.session_state.get("lang", "es"))
 
 
 # ----------------------------------------------------------------------
@@ -822,7 +815,12 @@ if st.button(t("btn_informe")):
         }
         with st.container():
             texto = st.write_stream(
-                generar_informe(datos_para_ia, stream=True, instrucciones_extra=t("instr_ia"))
+                generar_informe(
+                    datos_para_ia,
+                    stream=True,
+                    instrucciones_extra=t("instr_ia"),
+                    idioma=idioma,
+                )
             )
         st.session_state[clave_informe] = texto
         st.success(t("ok_informe"))
