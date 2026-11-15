@@ -187,6 +187,51 @@ TEXTOS = {
     "a tool provided by the European Space Agency (ESA), used for satellite image "
     "preprocessing and analysis."
     ),
+        # roadmap
+    "rm_titulo": ("Visión a Futuro y Escalabilidad (Roadmap)", "Future Vision and Scalability (Roadmap)"),
+    "rm_intro": (
+        "Esta prueba de concepto (PoC), construida sobre la catástrofe de Valencia, está diseñada como el motor base "
+        "para un sistema global de alerta y gestión de desastres. Nuestro roadmap de desarrollo continuo se "
+        "estructura en dos pilares estratégicos:",
+        "This proof of concept (PoC), built on the Valencia disaster, is designed as the core engine of a global "
+        "disaster alert and management system. Our ongoing development roadmap is structured around two "
+        "strategic pillars:",
+    ),
+    "rm_p1_titulo": (
+        "1. Democratización de la telemetría para ciudadanos y emergencias",
+        "1. Democratizing telemetry for citizens and emergency services",
+    ),
+    "rm_p1_texto": (
+        "El objetivo principal es que cualquier persona pueda acceder a nuestro mapa interactivo desde un "
+        "dispositivo móvil durante episodios climáticos llamativos en una zona concreta. Al cruzar la inundación "
+        "detectada por radar con la cartografía local, la población podrá identificar rutas seguras en tiempo real. "
+        "Además de ayudar a los servicios de emergencia a localizar mejores rutas de intervención dependiendo de la "
+        "situación climatológica y el lugar. Simultáneamente, los cuerpos de rescate y científicos dispondrán de una "
+        "herramienta de triaje que combina la telemetría del satélite con la estimación automatizada de población "
+        "afectada bloque a bloque.",
+        "The main goal is for anyone to be able to access our interactive map from a mobile device during severe "
+        "weather events in a specific area. By cross-referencing the flooding detected by radar with local mapping, "
+        "the public will be able to identify safe routes in real time. It will also help emergency services find the "
+        "best intervention routes depending on the weather situation and location. At the same time, rescue teams "
+        "and scientists will have a triage tool that combines satellite telemetry with an automated estimate of the "
+        "affected population, block by block.",
+    ),
+    "rm_p2_titulo": (
+        "2. Procesamiento en tiempo real en la nube (bypass de SNAP)",
+        "2. Real-time cloud processing (bypassing SNAP)",
+    ),
+    "rm_p2_texto": (
+        "A largo plazo, la arquitectura evolucionará para procesar la telemetría cruda (incluyendo las futuras "
+        "bandas L y S de la misión NISAR) sin depender de software de escritorio. Se desarrollará un motor "
+        "matemático en el backend que ejecute la calibración radiométrica directamente en la nube. Esto permitirá "
+        "lograr una verdadera detección en tiempo real, inyectando los polígonos de agua detectados en nuestra API "
+        "a los pocos minutos de que el satélite sobrevuele la zona.",
+        "In the long term, the architecture will evolve to process raw telemetry (including the upcoming L- and "
+        "S-bands of the NISAR mission) without relying on desktop software. A mathematical engine will be "
+        "developed in the backend to run radiometric calibration directly in the cloud. This will enable true "
+        "real-time detection, injecting the detected water polygons into our API within minutes of the "
+        "satellite passing over the area.",
+    ),
 }
 
 
@@ -839,6 +884,21 @@ else:
         st.markdown(texto)
     else:
         st.markdown(f"> {texto}")
+
+# ----------------------------------------------------------------------
+# VISIÓN A FUTURO Y ESCALABILIDAD (ROADMAP)
+# ----------------------------------------------------------------------
+st.markdown("---")
+st.header(t("rm_titulo"))
+st.write(t("rm_intro"))
+col_p1, col_p2 = st.columns(2)
+with col_p1:
+    st.subheader(t("rm_p1_titulo"))
+    st.write(t("rm_p1_texto"))
+with col_p2:
+    st.subheader(t("rm_p2_titulo"))
+    st.write(t("rm_p2_texto"))
+
 # ----------------------------------------------------------------------
 # AVISO FINAL
 # ----------------------------------------------------------------------
