@@ -1,3 +1,4 @@
+
 import base64
 import io
 import json
@@ -59,6 +60,28 @@ def listar_casos() -> dict:
         for carpeta in sorted(p for p in DATA_DIR.iterdir() if p.is_dir()):
             casos[carpeta.name.replace("_", " ").title()] = carpeta
     return casos
+
+
+MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+COLOR_SENSOR = {"sentinel": "#1f6feb", "nisar": "#d9480f"}  # azul = Sentinel, naranja = NISAR
+
+
+def fecha_legible(iso):
+    """'2024-10-19' -> '19 oct 2024'. Si no se puede interpretar, devuelve el texto tal cual."""
+    try:
+        a, m, d = str(iso).split("-")
+        return f"{int(d)} {MESES[int(m) - 1]} {a}"
+    except (ValueError, IndexError):
+        return str(iso) if iso else "fecha N/D"
+
+
+def chip_sensor(texto, clave):
+    """Etiqueta de color para que se distinga siempre de que satelite viene cada imagen."""
+    st.markdown(
+        f"<span style='background:{COLOR_SENSOR[clave]};color:#fff;padding:4px 12px;"
+        f"border-radius:999px;font-weight:600;font-size:0.9rem;'>{texto}</span>",
+        unsafe_allow_html=True,
+    )
 
 
 def encontrar_imagen(carpeta, base: str):
@@ -137,9 +160,11 @@ SLIDER_HTML = """
          justify-content:center;font:bold 16px sans-serif;color:#222;box-shadow:0 0 8px rgba(0,0,0,.6);">&#8596;</div>
   </div>
   <span style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.65);color:#fff;
-        padding:4px 10px;border-radius:4px;font:600 13px sans-serif;">ANTES</span>
+        padding:4px 10px;border-radius:4px;font:600 13px sans-serif;">__ETQ_A__</span>
   <span style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.65);color:#fff;
-        padding:4px 10px;border-radius:4px;font:600 13px sans-serif;">DESPU&Eacute;S</span>
+        padding:4px 10px;border-radius:4px;font:600 13px sans-serif;">__ETQ_D__</span>
+  <span style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:__COLOR__;
+        color:#fff;padding:4px 14px;border-radius:999px;font:700 13px sans-serif;">__SENSOR__</span>
 </div>
 <script>
   const c = document.getElementById("cmp"), top_ = document.getElementById("top"),
@@ -159,7 +184,8 @@ SLIDER_HTML = """
 """
 
 
-def mostrar_slider(ruta_a: Path, ruta_d: Path, alto=520):
+def mostrar_slider(ruta_a: Path, ruta_d: Path, alto=520, sensor="", clave="sentinel",
+                   fecha_a=None, fecha_d=None):
     a64, d64 = par_imagenes_b64(
         str(ruta_a), str(ruta_d), ruta_a.stat().st_mtime, ruta_d.stat().st_mtime
     )
@@ -167,6 +193,10 @@ def mostrar_slider(ruta_a: Path, ruta_d: Path, alto=520):
         SLIDER_HTML.replace("__ALTO__", str(alto))
         .replace("__ANTES__", a64)
         .replace("__DESPUES__", d64)
+        .replace("__ETQ_A__", f"ANTES &middot; {fecha_legible(fecha_a)}")
+        .replace("__ETQ_D__", f"DESPU&Eacute;S &middot; {fecha_legible(fecha_d)}")
+        .replace("__SENSOR__", sensor or "")
+        .replace("__COLOR__", COLOR_SENSOR[clave])
     )
     if hasattr(st, "iframe"):          # Streamlit reciente
         st.iframe(html, height=alto + 10)
@@ -227,7 +257,11 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Opciones de visualización")
 modo_vista = st.sidebar.radio(
     "Selecciona el modo de visualización",
-    ["Comparación directa (antes/después)", "Superposición de radar (Capa de agua)"],
+    [
+        "Comparación directa (antes/después)",
+        "Comparación NISAR (banda L)",
+        "Superposición de radar (Capa de agua)",
+    ],
 )
 opacidad = st.sidebar.slider("Nivel de opacidad de la capa de agua", 0.0, 1.0, 0.65, 0.05)
 st.sidebar.info(
@@ -245,6 +279,14 @@ if ruta_json and ruta_json.exists():
         datos = cargar_json(str(ruta_json), ruta_json.stat().st_mtime)
     except json.JSONDecodeError as e:
         st.error(f"`{ruta_json}` no es un JSON válido: {e}")
+
+nisar = {}
+ruta_nisar = carpeta / "nisar.json" if carpeta else None
+if ruta_nisar and ruta_nisar.exists():
+    try:
+        nisar = cargar_json(str(ruta_nisar), ruta_nisar.stat().st_mtime)
+    except json.JSONDecodeError as e:
+        st.error(f"`{ruta_nisar}` no es un JSON válido: {e}")
 
 ruta_mascara = carpeta / "mascara_agua.tif" if carpeta else None
 hay_mascara = bool(ruta_mascara and ruta_mascara.exists())
@@ -274,6 +316,12 @@ if datos.get("fecha_antes") and datos.get("fecha_despues"):
     partes.append(f"Imágenes: {datos['fecha_antes']} → {datos['fecha_despues']}")
 if partes:
     st.caption(" · ".join(partes))
+if nisar:
+    st.caption(
+        f"Datos adicionales: {nisar.get('sensor', 'NISAR')} · {nisar.get('polarizacion', 'N/D')} · "
+        f"{fecha_legible(nisar.get('fecha_antes'))} → {fecha_legible(nisar.get('fecha_despues'))} "
+        "(ver modo «Comparación NISAR»)"
+    )
 if "no_validada" in str(datos.get("estado", "")):
     st.info(
         "Resultado exploratorio: superficie candidata a agua nueva, "
@@ -285,19 +333,54 @@ if carpeta is None:
         "`mascara_agua.tif` (los genera `procesamiento.py`)."
     )
 
-if modo_vista.startswith("Comparación"):
+if modo_vista.startswith("Comparación directa"):
     img_a = encontrar_imagen(carpeta, "antes")
     img_d = encontrar_imagen(carpeta, "despues")
     if img_a and img_d:
+        etiqueta_s1 = f"🛰️ {sensor if sensor != 'N/D' else 'Sentinel-1 (banda C)'}"
+        chip_sensor(etiqueta_s1 + f" · {datos.get('polarizacion', 'N/D')}", "sentinel")
         st.caption("Arrastra el control deslizante para comparar el radar antes y después del evento.")
         try:
-            mostrar_slider(Path(img_a), Path(img_d))
+            mostrar_slider(
+                Path(img_a), Path(img_d),
+                sensor=etiqueta_s1, clave="sentinel",
+                fecha_a=datos.get("fecha_antes"), fecha_d=datos.get("fecha_despues"),
+            )
         except Exception as e:
             st.error(f"No se pudieron cargar las imágenes: {e}")
     else:
         col1, col2 = st.columns(2)
         col1.info(f"[ IMAGEN DE RADAR - ANTES - {caso} ]")
         col2.info(f"[ IMAGEN DE RADAR - DESPUÉS - {caso} ]")
+elif modo_vista.startswith("Comparación NISAR"):
+    n_a = encontrar_imagen(carpeta, "nisar_antes")
+    n_d = encontrar_imagen(carpeta, "nisar_despues")
+    if n_a and n_d:
+        etiqueta_n = f"📡 {nisar.get('sensor', 'NISAR (banda L)')}"
+        chip_sensor(etiqueta_n + f" · {nisar.get('polarizacion', 'N/D')}", "nisar")
+        st.caption(
+            "Arrastra el control deslizante para comparar NISAR entre "
+            f"{fecha_legible(nisar.get('fecha_antes'))} y {fecha_legible(nisar.get('fecha_despues'))}."
+        )
+        try:
+            mostrar_slider(
+                Path(n_a), Path(n_d),
+                sensor=etiqueta_n, clave="nisar",
+                fecha_a=nisar.get("fecha_antes"), fecha_d=nisar.get("fecha_despues"),
+            )
+        except Exception as e:
+            st.error(f"No se pudieron cargar las imágenes de NISAR: {e}")
+        st.warning(
+            "**No es el mismo evento que el análisis de Sentinel-1.** Las fechas son distintas y los "
+            "sensores también (banda L frente a banda C), así que los valores en dB no son "
+            "directamente comparables. Las métricas de más abajo (área, informe de IA) "
+            "proceden únicamente de Sentinel-1."
+        )
+    else:
+        st.info(
+            "Faltan `nisar_antes.png` / `nisar_despues.png` en la carpeta del caso. "
+            "Genéralos con `py exportar_nisar.py <antes.tif> <despues.tif> data/<caso>`."
+        )
 else:
     if hay_mascara:
         try:

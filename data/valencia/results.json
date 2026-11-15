@@ -41,6 +41,9 @@
     "min_pixeles": 25,
     "conectividad": 8
   },
-  "poblacion_afectada": null,
-  "fiabilidad": null
+  "poblacion_afectada": 5293,
+  "fiabilidad": null,
+  "poblacion_total_zona": 1688131,
+  "porcentaje_poblacion_afectada": 0.31,
+  "delta_poblacion": "WorldPop 2020 (estimación)"
 }
